@@ -34,6 +34,7 @@ class Client
     const AUTH_TYPE_URI                 = 0;
     const AUTH_TYPE_AUTHORIZATION_BASIC = 1;
     const AUTH_TYPE_FORM                = 2;
+    const AUTH_TYPE_AUTHORIZATION_BASIC_CLIENT_ID = 3;
 
     /**
      * Different Access token type
@@ -114,6 +115,13 @@ class Client
      * @var string
      */
     protected $access_token_algorithm = null;
+
+    /**
+     * Access Token issue date
+     *
+     * @var int
+     */
+    protected $access_token_issue_date = 0;
 
     /**
      * Access Token Parameter name
@@ -233,6 +241,10 @@ class Client
                 $parameters['client_id'] = $this->client_id;
                 $http_headers['Authorization'] = 'Basic ' . base64_encode($this->client_id .  ':' . $this->client_secret);
                 break;
+            case self::AUTH_TYPE_AUTHORIZATION_BASIC_CLIENT_ID:
+                $parameters['client_id'] = $this->client_id;
+                $http_headers['Authorization'] = 'Basic ' . $this->client_secret;
+                break;                
             default:
                 throw new Exception('Unknown client auth type.', Exception::INVALID_CLIENT_AUTHENTICATION_TYPE);
                 break;
@@ -250,6 +262,17 @@ class Client
     public function setAccessToken($token)
     {
         $this->access_token = $token;
+    }
+
+    /**
+     * setTokenIssueDate
+     *
+     * @param int $date Access token issue date
+     * @return void
+     */
+    public function setAccessTokenIssueDate($date)
+    {
+        $this->access_token_issue_date = $date;
     }
 
     /**
@@ -367,16 +390,18 @@ class Client
             }
         }
 
-        $signature = base64_encode(hash_hmac($this->access_token_algorithm,
-                    $timestamp . "\n"
-                    . $nonce . "\n"
-                    . $http_method . "\n"
-                    . $parsed_url['path'] . "\n"
-                    . $parsed_url['host'] . "\n"
-                    . $parsed_url['port'] . "\n\n"
-                    , $this->access_token_secret, true));
+        $age = max(0, $timestamp - $this->access_token_issue_date);
+        $mac_nonce = $age . ':' . rand();
+        
+        $toencode = $mac_nonce . "\n"
+            . $http_method . "\n"
+            . $parsed_url['path'] . "\n"
+            . $parsed_url['host'] . "\n"
+            . $parsed_url['port'] . "\n\n\n";
 
-        return 'id="' . $this->access_token . '", ts="' . $timestamp . '", nonce="' . $nonce . '", mac="' . $signature . '"';
+        $signature = base64_encode(hash_hmac($this->access_token_algorithm, $toencode, $this->access_token_secret, true));
+        
+        return 'id="' . $this->access_token . '", nonce="' . $mac_nonce . '", mac="' . $signature . '"';
     }
 
     /**
